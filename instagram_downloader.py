@@ -4,9 +4,15 @@ import shutil
 import platform
 import requests
 import sys
+import logging
 from time import sleep
+from tqdm import tqdm
 import instaloader
 from DataBase.features import *
+from colorama import Fore
+
+# Suppress instaloader noisy logs
+instaloader.logger.setLevel(logging.CRITICAL)
 
 # Function to get the latest version from version.txt
 def get_latest_version():
@@ -69,7 +75,7 @@ else:
 session_file = "ig_session"
 temp_dir = os.path.join(download_path, "temp_download")
 
-# Clear screen
+# Clear screen function
 def clear_screen():
     os.system('cls' if platform.system() == 'Windows' else 'clear')
 
@@ -95,28 +101,34 @@ def download_post(shortcode):
     L.dirname_pattern = temp_dir
     L.download_post(post, target="")
 
-    media_found = False
-    for file in os.listdir(temp_dir):
-        if (file.endswith((".mp4", ".jpg", ".jpeg", ".png")) and shortcode in file):
-            old_path = os.path.join(temp_dir, file)
-            new_filename = f"{post.owner_username}_{file}"
-            new_path = os.path.join(download_path, new_filename)
-            shutil.move(old_path, new_path)
-            print(Fore.GREEN + f"[✓] Saved: {new_filename}")
-            media_found = True
-
-    if not media_found:
+    files = [file for file in os.listdir(temp_dir) if (file.endswith((".mp4", ".jpg", ".jpeg", ".png")) and shortcode in file)]
+    if not files:
         print(Fore.RED + "[X] Media file not found.")
-    shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir)
+        return
 
-# Start
+    # Show progress bar during download
+    for file in tqdm(files, desc="Downloading", colour="green"):
+        old_path = os.path.join(temp_dir, file)
+        new_filename = f"{post.owner_username}_{file}"
+        new_path = os.path.join(download_path, new_filename)
+        shutil.move(old_path, new_path)
+        sleep(0.2)  # for progress bar effect
+
+    print(Fore.GREEN + f"[✓] Saved {len(files)} file(s) successfully.")
+    shutil.rmtree(temp_dir)
+    sleep(2)
+    clear_screen()
+    show_banner()
+
+# Start the script
 clear_screen()
 show_banner()
 
 # Check for updates at the beginning
 check_and_update()
 
-# Login
+# Login to Instagram
 username = input(Fore.YELLOW + "Enter your Instagram username: ")
 try:
     L.load_session_from_file(username, session_file)
@@ -138,6 +150,7 @@ except FileNotFoundError:
         print(Fore.RED + f"[X] Login failed: {e}")
         exit()
 
+# Main loop for downloading posts
 while True:
     print()
     url = input(Fore.CYAN + "Paste Instagram URL (or type 'exit' to quit): ").strip()
