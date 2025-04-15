@@ -1,31 +1,18 @@
 import os
 import re
-import shutil
-import platform
 import requests
 import instaloader
 import telebot
-from time import sleep
 from dotenv import load_dotenv
 
-# Load env
+# Load .env
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 IG_SESSIONID = os.getenv("IG_SESSIONID")
 
-# Bot
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Paths
-if platform.system() == "Windows":
-    download_path = f"C://Users//{os.getlogin()}//Downloads"
-else:
-    download_path = "/data/data/com.termux/files/home/storage/downloads"
-
-temp_dir = os.path.join(download_path, "temp_download")
-os.makedirs(temp_dir, exist_ok=True)
-
-# Setup Instaloader
+# Instaloader setup
 L = instaloader.Instaloader(
     download_video_thumbnails=False,
     download_geotags=False,
@@ -41,49 +28,53 @@ def extract_shortcode(url):
     match = re.search(r"instagram\.com/(?:reel|p|tv)/([^/?#&]+)", url)
     return match.group(1) if match else None
 
-# Download post logic
-def download_post(shortcode):
-    post = instaloader.Post.from_shortcode(L.context, shortcode)
-    L.dirname_pattern = temp_dir
-    L.download_post(post, target="")
+# Fetch post data
+def fetch_post(shortcode):
+    return instaloader.Post.from_shortcode(L.context, shortcode)
 
-    # Filter media files
-    files = [file for file in os.listdir(temp_dir) if file.endswith((".mp4", ".jpg", ".jpeg", ".png")) and shortcode in file]
-    if not files:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        return None, post
+# /start command
+@bot.message_handler(commands=['start'])
+def start_command(message):
+    bot.send_message(message.chat.id, """
+👋 Welcome to the InstaHive Bot!
 
-    saved_files = []
-    for file in files:
-        old_path = os.path.join(temp_dir, file)
-        new_name = f"{post.owner_username}_{file}"
-        new_path = os.path.join(download_path, new_name)
-        shutil.move(old_path, new_path)
-        saved_files.append(new_path)
-    shutil.rmtree(temp_dir, ignore_errors=True)
-    return saved_files, post
+📥 Send me any public Instagram Reel, Post, or Video:
+🔗 https://www.instagram.com/reel/shortcode/
 
-# Bot handler
+I'll send:
+✅ Cover image
+✅ Post media (video/photo)
+✅ Post details
+
+🔧 Built by @imraj569  
+🔗 GitHub: https://github.com/imraj569
+""")
+
+# ... (imports and setup remain the same)
+
+# Handle Instagram URLs
 @bot.message_handler(func=lambda msg: True)
-def handle_url(message):
+def handle_instagram_url(message):
     url = message.text.strip()
     shortcode = extract_shortcode(url)
+
     if not shortcode:
-        bot.reply_to(message, "❌ Invalid Instagram URL.")
+        bot.reply_to(message, "❌ Invalid Instagram URL. Please send a valid /p/, /reel/, or /tv/ link.")
         return
 
     bot.send_chat_action(message.chat.id, 'typing')
 
     try:
-        files, post = download_post(shortcode)
+        post = fetch_post(shortcode)
 
-        # Send cover image (without saving)
-        cover_url = post.url
-        r = requests.get(cover_url)
+        # Send cover image
+        bot.send_chat_action(message.chat.id, 'upload_photo')
+        r = requests.get(post.url)
         if r.status_code == 200:
             bot.send_photo(message.chat.id, r.content, caption="🖼 Cover image")
 
-        # Post details
+        # Send post details
+        bot.send_chat_action(message.chat.id, 'typing')
         caption = post.caption or "No caption"
         details = f"""📄 <b>Post Details</b>
 👤 <b>User:</b> @{post.owner_username}
@@ -92,20 +83,33 @@ def handle_url(message):
 🔗 <a href="{url}">View on Instagram</a>"""
         bot.send_message(message.chat.id, details, parse_mode="HTML", disable_web_page_preview=False)
 
-        # Send downloaded file(s)
-        if files:
-            for path in files:
-                with open(path, 'rb') as media:
-                    if path.endswith(".mp4"):
-                        bot.send_video(message.chat.id, media)
-                    else:
-                        bot.send_photo(message.chat.id, media)
+        # Send media
+        if post.typename == "GraphSidecar":
+            for node in post.get_sidecar_nodes():
+                media_url = node.video_url if node.is_video else node.display_url
+                send_media(message.chat.id, media_url, node.is_video)
         else:
-            bot.send_message(message.chat.id, "⚠️ Media not found.")
+            media_url = post.video_url if post.is_video else post.url
+            send_media(message.chat.id, media_url, post.is_video)
 
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)}")
 
-# Start bot
-print("🤖 Bot running...")
+# Helper to send photo/video from URL
+def send_media(chat_id, media_url, is_video):
+    action = 'upload_video' if is_video else 'upload_photo'
+    bot.send_chat_action(chat_id, action)
+
+    r = requests.get(media_url, stream=True)
+    if r.status_code == 200:
+        media = r.content
+        if is_video:
+            bot.send_video(chat_id, media)
+        else:
+            bot.send_photo(chat_id, media)
+    else:
+        bot.send_message(chat_id, "⚠️ Failed to fetch media.")
+
+# Start polling
+print("🤖 Bot is running... by @imraj569")
 bot.polling()
