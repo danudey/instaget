@@ -6,6 +6,7 @@ import telebot
 import sys
 from datetime import datetime
 from dotenv import load_dotenv
+from DataBase.features import *
 
 # Load only the Telegram bot token
 load_dotenv()
@@ -134,6 +135,7 @@ def handle_instagram_url(message):
 
 # Run bot
 if __name__ == "__main__":
+    check_and_update()
     login_instagram()
     print("🤖 Bot is running... by @imraj569")
     try:
