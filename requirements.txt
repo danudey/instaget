@@ -2,3 +2,4 @@ instaloader
 colorama
 tqdm
 requests
+psutil
