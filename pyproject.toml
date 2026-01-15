@@ -1,7 +1,10 @@
 [project]
-name = "instahive"
+name = "instaget"
 version = "0.1.0"
-description = "Add your description here"
+description = "Gets from Insta"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = ['instaloader@git+https://github.com/danudey/instaloader.git@master', 'psutil']
+
+[project.scripts]
+instaget = "instaget.main:main"
